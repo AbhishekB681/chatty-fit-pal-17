@@ -1,6 +1,6 @@
 
 import { UserProfile, NutritionLog, WorkoutLog, Meal, Workout } from '@/types/user';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isAuthenticated, getCurrentUserId } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Database } from '@/integrations/supabase/types';
 
@@ -16,19 +16,30 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
   
   try {
     const session = await supabase.auth.getSession();
+    const isLoggedIn = !!session.data.session?.user;
+    
+    console.log("Auth status when saving profile:", isLoggedIn ? "Logged in" : "Not logged in");
+    
     if (session.data.session?.user) {
       const userId = session.data.session.user.id;
       
       // First check if profile exists
-      const { data: existingProfile } = await supabase
+      const { data: existingProfile, error: fetchError } = await supabase
         .from('user_profiles')
         .select('id')
         .eq('id', userId)
         .single();
       
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error('Error checking if profile exists:', fetchError);
+        toast.error('Error saving profile: ' + fetchError.message);
+        return;
+      }
+      
       let result;
       
       if (existingProfile) {
+        console.log("Updating existing profile for user:", userId);
         // Update existing profile
         result = await supabase
           .from('user_profiles')
@@ -51,6 +62,7 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
           })
           .eq('id', userId);
       } else {
+        console.log("Creating new profile for user:", userId);
         // Insert new profile
         result = await supabase
           .from('user_profiles')
@@ -76,8 +88,14 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
       
       if (result.error) {
         console.error('Error saving profile to Supabase:', result.error);
-        toast.error('Failed to save profile');
+        toast.error('Failed to save profile: ' + result.error.message);
+      } else {
+        console.log("Profile saved successfully to Supabase");
+        toast.success('Profile saved to Supabase');
       }
+    } else {
+      console.log("No active session, profile only saved to localStorage");
+      toast.info('Profile saved locally, sign in to sync');
     }
   } catch (error) {
     console.error('Error saving user profile:', error);
