@@ -2,6 +2,7 @@
 import { UserProfile, NutritionLog, WorkoutLog, Meal, Workout } from '@/types/user';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { Database } from '@/integrations/supabase/types';
 
 // Key constants for localStorage (fallback)
 const USER_PROFILE_KEY = 'chatty-fit-pal-user-profile';
@@ -228,7 +229,12 @@ export async function saveNutritionLog(log: NutritionLog): Promise<void> {
           return;
         }
         
-        logId = newLog.id;
+        if (newLog) {
+          logId = newLog.id;
+        } else {
+          console.error('No log ID returned after insert');
+          return;
+        }
       }
       
       // Now handle meals
@@ -281,7 +287,12 @@ export async function saveNutritionLog(log: NutritionLog): Promise<void> {
             continue;
           }
           
-          mealId = newMeal.id;
+          if (newMeal) {
+            mealId = newMeal.id;
+          } else {
+            console.error('No meal ID returned after insert');
+            continue;
+          }
         }
         
         // Now handle foods for this meal
@@ -511,7 +522,12 @@ export async function saveWorkoutLog(log: WorkoutLog): Promise<void> {
           return;
         }
         
-        logId = newLog.id;
+        if (newLog) {
+          logId = newLog.id;
+        } else {
+          console.error('No log ID returned after insert');
+          return;
+        }
       }
       
       // Delete existing workouts for this log
