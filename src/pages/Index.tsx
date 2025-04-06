@@ -5,23 +5,105 @@ import OnboardingFlow from '@/components/OnboardingFlow';
 import ChatBot from '@/components/ChatBot';
 import DashboardPanel from '@/components/DashboardPanel';
 import { UserProfile } from '@/types/user';
-import { getUserProfile, saveUserProfile } from '@/utils/storage';
+import { getUserProfile, getUserProfileAsync, saveUserProfile } from '@/utils/storage';
+import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button';
+import { LogIn, LogOut, User } from 'lucide-react';
+import { toast } from 'sonner';
 
 const Index = () => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState<any>(null);
 
-  // Load user profile on mount
+  // Load user profile and check auth state on mount
   useEffect(() => {
-    const profile = getUserProfile();
-    setUserProfile(profile);
-    setIsLoading(false);
+    // Set up auth state listener first
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, currentSession) => {
+        setSession(currentSession);
+        
+        // On sign in, try to load profile
+        if (event === 'SIGNED_IN') {
+          loadUserProfile();
+          toast.success('Signed in successfully');
+        }
+        
+        // On sign out, load from local storage
+        if (event === 'SIGNED_OUT') {
+          const profile = getUserProfile();
+          setUserProfile(profile);
+          toast.info('Signed out');
+        }
+      }
+    );
+
+    // Check current session and load profile
+    async function initialize() {
+      setIsLoading(true);
+      try {
+        // Get current session
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        setSession(currentSession);
+        
+        // Load profile
+        await loadUserProfile();
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    initialize();
+
+    // Clean up subscription
+    return () => subscription.unsubscribe();
   }, []);
 
+  // Load user profile from Supabase or localStorage
+  async function loadUserProfile() {
+    try {
+      const profile = await getUserProfileAsync();
+      setUserProfile(profile);
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+      toast.error('Error loading profile');
+    }
+  }
+
   // Handle onboarding completion
-  const handleOnboardingComplete = (profile: UserProfile) => {
-    saveUserProfile(profile);
-    setUserProfile(profile);
+  const handleOnboardingComplete = async (profile: UserProfile) => {
+    try {
+      await saveUserProfile(profile);
+      setUserProfile(profile);
+      toast.success('Profile saved successfully');
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      toast.error('Error saving profile');
+    }
+  };
+
+  // Handle sign in
+  const handleSignIn = async () => {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin
+      }
+    });
+    
+    if (error) {
+      console.error('Error signing in:', error);
+      toast.error('Error signing in');
+    }
+  };
+
+  // Handle sign out
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error('Error signing out:', error);
+      toast.error('Error signing out');
+    }
   };
 
   // Display loading state
@@ -59,11 +141,39 @@ const Index = () => {
         <div className="container mx-auto py-4 px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center">
             <h1 className="text-2xl font-bold text-app-teal">ChattyFitPal</h1>
-            <div className="text-sm text-gray-500">
+            <div className="flex items-center space-x-4">
               {userProfile.goal && (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-app-teal bg-opacity-10 text-app-teal">
+                <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-app-teal bg-opacity-10 text-app-teal">
                   Goal: {userProfile.goal.charAt(0).toUpperCase() + userProfile.goal.slice(1)}
                 </span>
+              )}
+              
+              {session ? (
+                <div className="flex items-center space-x-2">
+                  <div className="hidden sm:flex items-center space-x-1 text-sm text-gray-600 dark:text-gray-300">
+                    <User size={14} />
+                    <span>{session.user.email}</span>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={handleSignOut}
+                    className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                  >
+                    <LogOut size={16} className="mr-1" />
+                    <span className="hidden sm:inline">Sign Out</span>
+                  </Button>
+                </div>
+              ) : (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleSignIn}
+                  className="text-app-teal border-app-teal hover:bg-app-teal hover:text-white"
+                >
+                  <LogIn size={16} className="mr-1" />
+                  <span>Sign In</span>
+                </Button>
               )}
             </div>
           </div>
