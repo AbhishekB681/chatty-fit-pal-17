@@ -84,25 +84,35 @@ const Index = () => {
 
   // Handle sign in
   const handleSignIn = async () => {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      
+      if (error) {
+        console.error('Error signing in:', error);
+        toast.error(`Error signing in: ${error.message}`);
       }
-    });
-    
-    if (error) {
-      console.error('Error signing in:', error);
-      toast.error('Error signing in');
+    } catch (err) {
+      console.error('Exception during sign in:', err);
+      toast.error(`Sign in failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
   // Handle sign out
   const handleSignOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Error signing out:', error);
-      toast.error('Error signing out');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Error signing out:', error);
+        toast.error(`Error signing out: ${error.message}`);
+      }
+    } catch (err) {
+      console.error('Exception during sign out:', err);
+      toast.error(`Sign out failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -142,7 +152,7 @@ const Index = () => {
           <div className="flex justify-between items-center">
             <h1 className="text-2xl font-bold text-app-teal">ChattyFitPal</h1>
             <div className="flex items-center space-x-4">
-              {userProfile.goal && (
+              {userProfile?.goal && (
                 <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-app-teal bg-opacity-10 text-app-teal">
                   Goal: {userProfile.goal.charAt(0).toUpperCase() + userProfile.goal.slice(1)}
                 </span>
