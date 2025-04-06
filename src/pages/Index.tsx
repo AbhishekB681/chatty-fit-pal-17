@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Separator } from '@/components/ui/separator';
 import OnboardingFlow from '@/components/OnboardingFlow';
@@ -16,21 +15,17 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [session, setSession] = useState<any>(null);
 
-  // Load user profile and check auth state on mount
   useEffect(() => {
-    // Set up auth state listener first
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, currentSession) => {
         setSession(currentSession);
         
-        // On sign in, try to load profile
         if (event === 'SIGNED_IN') {
           loadUserProfile();
           toast.success('Signed in successfully');
           console.log('Sign in event detected, loading user profile');
         }
         
-        // On sign out, load from local storage
         if (event === 'SIGNED_OUT') {
           const profile = getUserProfile();
           setUserProfile(profile);
@@ -40,11 +35,9 @@ const Index = () => {
       }
     );
 
-    // Check current session and load profile
     async function initialize() {
       setIsLoading(true);
       try {
-        // Get current session
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         setSession(currentSession);
         
@@ -54,7 +47,6 @@ const Index = () => {
           console.log('No active session on initialization');
         }
         
-        // Load profile
         await loadUserProfile();
       } catch (error) {
         console.error('Error during initialization:', error);
@@ -66,11 +58,9 @@ const Index = () => {
     
     initialize();
 
-    // Clean up subscription
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load user profile from Supabase or localStorage
   async function loadUserProfile() {
     try {
       console.log('Loading user profile...');
@@ -96,7 +86,6 @@ const Index = () => {
     }
   }
 
-  // Handle onboarding completion
   const handleOnboardingComplete = async (profile: UserProfile) => {
     try {
       console.log('Onboarding completed, saving profile...');
@@ -109,7 +98,6 @@ const Index = () => {
     }
   };
 
-  // Handle sign in
   const handleSignIn = async () => {
     try {
       console.log('Initiating Google sign in...');
@@ -132,7 +120,6 @@ const Index = () => {
     }
   };
 
-  // Handle sign out
   const handleSignOut = async () => {
     try {
       console.log('Signing out...');
@@ -149,12 +136,11 @@ const Index = () => {
     }
   };
 
-  // Display loading state
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-app-teal mb-4">ChattyFitPal</h1>
+          <h1 className="text-2xl font-bold text-app-teal mb-4">FitFuel</h1>
           <div className="w-16 h-16 border-4 border-app-teal border-t-transparent rounded-full mx-auto animate-spin"></div>
           <p className="mt-4 text-gray-500">Loading your fitness companion...</p>
         </div>
@@ -162,12 +148,11 @@ const Index = () => {
     );
   }
 
-  // Display onboarding flow if profile doesn't exist or is incomplete
   if (!userProfile || !userProfile.onboardingComplete) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-50 dark:bg-gray-900">
         <div className="w-full max-w-md text-center mb-8">
-          <h1 className="text-3xl font-bold text-app-teal mb-2">ChattyFitPal</h1>
+          <h1 className="text-3xl font-bold text-app-teal mb-2">FitFuel</h1>
           <p className="text-gray-500">Your AI fitness and nutrition companion</p>
         </div>
         
@@ -176,14 +161,12 @@ const Index = () => {
     );
   }
 
-  // Main app interface after onboarding
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="container mx-auto py-4 px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-app-teal">ChattyFitPal</h1>
+            <h1 className="text-2xl font-bold text-app-teal">FitFuel</h1>
             <div className="flex items-center space-x-4">
               {userProfile?.goal && (
                 <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-app-teal bg-opacity-10 text-app-teal">
@@ -223,15 +206,12 @@ const Index = () => {
         </div>
       </header>
 
-      {/* Main content */}
       <div className="flex-1 container mx-auto py-6 px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-8rem)]">
-          {/* Chat interface - takes up 2/3 on desktop */}
           <div className="lg:col-span-2 h-full">
             <ChatBot userProfile={userProfile} />
           </div>
           
-          {/* Dashboard panel - takes up 1/3 on desktop */}
           <div className="h-full">
             <DashboardPanel userProfile={userProfile} />
           </div>
