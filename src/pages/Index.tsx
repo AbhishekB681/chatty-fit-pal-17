@@ -6,7 +6,7 @@ import ChatBot from '@/components/ChatBot';
 import DashboardPanel from '@/components/DashboardPanel';
 import { UserProfile } from '@/types/user';
 import { getUserProfile, getUserProfileAsync, saveUserProfile } from '@/utils/storage';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isAuthenticated } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { LogIn, LogOut, User } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,6 +27,7 @@ const Index = () => {
         if (event === 'SIGNED_IN') {
           loadUserProfile();
           toast.success('Signed in successfully');
+          console.log('Sign in event detected, loading user profile');
         }
         
         // On sign out, load from local storage
@@ -34,6 +35,7 @@ const Index = () => {
           const profile = getUserProfile();
           setUserProfile(profile);
           toast.info('Signed out');
+          console.log('Sign out event detected, loading profile from local storage');
         }
       }
     );
@@ -46,8 +48,17 @@ const Index = () => {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         setSession(currentSession);
         
+        if (currentSession) {
+          console.log('Active session found on initialization');
+        } else {
+          console.log('No active session on initialization');
+        }
+        
         // Load profile
         await loadUserProfile();
+      } catch (error) {
+        console.error('Error during initialization:', error);
+        toast.error('Error loading your profile');
       } finally {
         setIsLoading(false);
       }
@@ -62,8 +73,23 @@ const Index = () => {
   // Load user profile from Supabase or localStorage
   async function loadUserProfile() {
     try {
+      console.log('Loading user profile...');
+      const isLoggedIn = await isAuthenticated();
+      
+      if (isLoggedIn) {
+        console.log('User is authenticated, trying to load profile from Supabase');
+      } else {
+        console.log('User is not authenticated, will fall back to localStorage');
+      }
+      
       const profile = await getUserProfileAsync();
       setUserProfile(profile);
+      
+      if (profile) {
+        console.log('Profile loaded successfully');
+      } else {
+        console.log('No profile found');
+      }
     } catch (error) {
       console.error('Error loading user profile:', error);
       toast.error('Error loading profile');
@@ -73,6 +99,7 @@ const Index = () => {
   // Handle onboarding completion
   const handleOnboardingComplete = async (profile: UserProfile) => {
     try {
+      console.log('Onboarding completed, saving profile...');
       await saveUserProfile(profile);
       setUserProfile(profile);
       toast.success('Profile saved successfully');
@@ -85,6 +112,7 @@ const Index = () => {
   // Handle sign in
   const handleSignIn = async () => {
     try {
+      console.log('Initiating Google sign in...');
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -95,6 +123,8 @@ const Index = () => {
       if (error) {
         console.error('Error signing in:', error);
         toast.error(`Error signing in: ${error.message}`);
+      } else {
+        console.log('Sign in process started:', data);
       }
     } catch (err) {
       console.error('Exception during sign in:', err);
@@ -105,10 +135,13 @@ const Index = () => {
   // Handle sign out
   const handleSignOut = async () => {
     try {
+      console.log('Signing out...');
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('Error signing out:', error);
         toast.error(`Error signing out: ${error.message}`);
+      } else {
+        console.log('Sign out successful');
       }
     } catch (err) {
       console.error('Exception during sign out:', err);

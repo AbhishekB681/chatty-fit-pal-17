@@ -14,21 +14,45 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     persistSession: true,
     autoRefreshToken: true,
     storageKey: 'chatty-fit-pal-auth',
+    debug: true, // Enable debug mode to see auth-related logs
   },
 });
 
 // Helper function to check if user is authenticated
-export const isAuthenticated = async () => {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    console.error("Auth check error:", error);
+export const isAuthenticated = async (): Promise<boolean> => {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error("Auth check error:", error);
+      return false;
+    }
+    const isAuth = !!data.session?.user;
+    console.log("Authentication check:", isAuth ? "User is authenticated" : "User is not authenticated");
+    return isAuth;
+  } catch (e) {
+    console.error("Exception during auth check:", e);
     return false;
   }
-  return !!data.session?.user;
 };
 
 // Helper function to get current user ID
-export const getCurrentUserId = async () => {
-  const { data } = await supabase.auth.getSession();
-  return data.session?.user?.id;
+export const getCurrentUserId = async (): Promise<string | undefined> => {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const userId = data.session?.user?.id;
+    if (userId) {
+      console.log("Current user ID:", userId);
+    } else {
+      console.log("No user ID available - user not logged in");
+    }
+    return userId;
+  } catch (e) {
+    console.error("Exception getting user ID:", e);
+    return undefined;
+  }
 };
+
+// Add auth state change listener for debugging
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log(`Auth state changed: ${event}`, session ? "User session available" : "No user session");
+});

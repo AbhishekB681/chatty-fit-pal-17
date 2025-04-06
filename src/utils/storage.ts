@@ -1,4 +1,3 @@
-
 import { UserProfile, NutritionLog, WorkoutLog, Meal, Workout } from '@/types/user';
 import { supabase, isAuthenticated, getCurrentUserId } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -8,6 +7,15 @@ import { Database } from '@/integrations/supabase/types';
 const USER_PROFILE_KEY = 'chatty-fit-pal-user-profile';
 const NUTRITION_LOG_KEY = 'chatty-fit-pal-nutrition-log';
 const WORKOUT_LOG_KEY = 'chatty-fit-pal-workout-log';
+
+// Debug function for logging Supabase operations
+function logOperation(operation: string, success: boolean, details?: any) {
+  if (success) {
+    console.log(`✅ Supabase ${operation} successful:`, details);
+  } else {
+    console.error(`❌ Supabase ${operation} failed:`, details);
+  }
+}
 
 // Save user profile to Supabase and localStorage
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
@@ -33,6 +41,7 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
       if (fetchError && fetchError.code !== 'PGRST116') {
         console.error('Error checking if profile exists:', fetchError);
         toast.error('Error saving profile: ' + fetchError.message);
+        logOperation('check profile exists', false, fetchError);
         return;
       }
       
@@ -89,9 +98,11 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
       if (result.error) {
         console.error('Error saving profile to Supabase:', result.error);
         toast.error('Failed to save profile: ' + result.error.message);
+        logOperation('save profile', false, result.error);
       } else {
         console.log("Profile saved successfully to Supabase");
         toast.success('Profile saved to Supabase');
+        logOperation('save profile', true);
       }
     } else {
       console.log("No active session, profile only saved to localStorage");
@@ -100,6 +111,7 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
   } catch (error) {
     console.error('Error saving user profile:', error);
     toast.error('Failed to save profile');
+    logOperation('save profile', false, error);
   }
 }
 
@@ -119,6 +131,7 @@ export async function getUserProfileAsync(): Promise<UserProfile | null> {
       
       if (error) {
         console.error('Error fetching profile from Supabase:', error);
+        logOperation('fetch profile', false, error);
         // Fall back to localStorage
         return getUserProfile();
       }
@@ -147,6 +160,7 @@ export async function getUserProfileAsync(): Promise<UserProfile | null> {
         
         // Update localStorage for offline access
         localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+        logOperation('fetch profile', true);
         
         return profile;
       }
@@ -156,6 +170,7 @@ export async function getUserProfileAsync(): Promise<UserProfile | null> {
     return getUserProfile();
   } catch (error) {
     console.error('Error getting user profile:', error);
+    logOperation('fetch profile', false, error);
     // Fall back to localStorage
     return getUserProfile();
   }
@@ -200,144 +215,198 @@ export async function saveNutritionLog(log: NutritionLog): Promise<void> {
   
   // Save to Supabase if logged in
   try {
-    const session = await supabase.auth.getSession();
-    if (session.data.session?.user) {
-      const userId = session.data.session.user.id;
-      
-      // First check if log exists for this date
-      const { data: existingLog } = await supabase
+    const isLoggedIn = await isAuthenticated();
+    if (!isLoggedIn) {
+      console.log("Not authenticated, nutrition log only saved to localStorage");
+      return;
+    }
+    
+    const userId = await getCurrentUserId();
+    if (!userId) {
+      console.error("No user ID available");
+      return;
+    }
+    
+    console.log("Saving nutrition log for user:", userId, "date:", log.date);
+    
+    // First check if log exists for this date
+    const { data: existingLog, error: fetchError } = await supabase
+      .from('nutrition_logs')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('date', log.date)
+      .single();
+    
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error('Error checking if nutrition log exists:', fetchError);
+      logOperation('check nutrition log exists', false, fetchError);
+      return;
+    }
+    
+    let logId;
+    
+    if (existingLog) {
+      // Update existing log
+      const { error: updateError } = await supabase
         .from('nutrition_logs')
+        .update({
+          total_calories: log.totalCalories,
+          total_protein: log.totalMacros.protein,
+          total_carbs: log.totalMacros.carbs,
+          total_fat: log.totalMacros.fat
+        })
+        .eq('id', existingLog.id);
+      
+      if (updateError) {
+        console.error('Error updating nutrition log:', updateError);
+        logOperation('update nutrition log', false, updateError);
+        return;
+      }
+      
+      logId = existingLog.id;
+      logOperation('update nutrition log', true);
+    } else {
+      // Insert new log
+      const { data: newLog, error: insertError } = await supabase
+        .from('nutrition_logs')
+        .insert({
+          user_id: userId,
+          date: log.date,
+          total_calories: log.totalCalories,
+          total_protein: log.totalMacros.protein,
+          total_carbs: log.totalMacros.carbs,
+          total_fat: log.totalMacros.fat
+        })
         .select('id')
-        .eq('user_id', userId)
-        .eq('date', log.date)
         .single();
       
-      let logId;
+      if (insertError) {
+        console.error('Error creating nutrition log:', insertError);
+        logOperation('create nutrition log', false, insertError);
+        return;
+      }
       
-      if (existingLog) {
-        // Update existing log
-        await supabase
-          .from('nutrition_logs')
-          .update({
-            total_calories: log.totalCalories,
-            total_protein: log.totalMacros.protein,
-            total_carbs: log.totalMacros.carbs,
-            total_fat: log.totalMacros.fat
-          })
-          .eq('id', existingLog.id);
-        
-        logId = existingLog.id;
+      if (newLog) {
+        logId = newLog.id;
+        logOperation('create nutrition log', true);
       } else {
-        // Insert new log
-        const { data: newLog, error } = await supabase
-          .from('nutrition_logs')
+        console.error('No log ID returned after insert');
+        return;
+      }
+    }
+    
+    // Now handle meals
+    // First get existing meals for this log
+    const { data: existingMeals, error: mealsError } = await supabase
+      .from('meals')
+      .select('id, name')
+      .eq('nutrition_log_id', logId);
+    
+    if (mealsError) {
+      console.error('Error fetching existing meals:', mealsError);
+      logOperation('fetch meals', false, mealsError);
+      return;
+    }
+    
+    // Create map of existing meal IDs by name for quick lookup
+    const existingMealMap = new Map();
+    existingMeals?.forEach(meal => {
+      existingMealMap.set(meal.name, meal.id);
+    });
+    
+    // Process each meal
+    for (const meal of log.meals) {
+      let mealId = existingMealMap.get(meal.name);
+      
+      if (mealId) {
+        // Update existing meal
+        const { error: updateMealError } = await supabase
+          .from('meals')
+          .update({
+            time: meal.time,
+            total_calories: meal.totalCalories,
+            total_protein: meal.totalMacros.protein,
+            total_carbs: meal.totalMacros.carbs,
+            total_fat: meal.totalMacros.fat
+          })
+          .eq('id', mealId);
+          
+        if (updateMealError) {
+          console.error('Error updating meal:', updateMealError);
+          logOperation('update meal', false, updateMealError);
+          continue;
+        }
+        logOperation('update meal', true);
+      } else {
+        // Insert new meal
+        const { data: newMeal, error: insertMealError } = await supabase
+          .from('meals')
           .insert({
-            user_id: userId,
-            date: log.date,
-            total_calories: log.totalCalories,
-            total_protein: log.totalMacros.protein,
-            total_carbs: log.totalMacros.carbs,
-            total_fat: log.totalMacros.fat
+            nutrition_log_id: logId,
+            name: meal.name,
+            time: meal.time,
+            total_calories: meal.totalCalories,
+            total_protein: meal.totalMacros.protein,
+            total_carbs: meal.totalMacros.carbs,
+            total_fat: meal.totalMacros.fat
           })
           .select('id')
           .single();
         
-        if (error) {
-          console.error('Error creating nutrition log:', error);
-          return;
+        if (insertMealError) {
+          console.error('Error creating meal:', insertMealError);
+          logOperation('create meal', false, insertMealError);
+          continue;
         }
         
-        if (newLog) {
-          logId = newLog.id;
+        if (newMeal) {
+          mealId = newMeal.id;
+          logOperation('create meal', true);
         } else {
-          console.error('No log ID returned after insert');
-          return;
+          console.error('No meal ID returned after insert');
+          continue;
         }
       }
       
-      // Now handle meals
-      // First get existing meals for this log
-      const { data: existingMeals } = await supabase
-        .from('meals')
-        .select('id, name')
-        .eq('nutrition_log_id', logId);
-      
-      // Create map of existing meal IDs by name for quick lookup
-      const existingMealMap = new Map();
-      existingMeals?.forEach(meal => {
-        existingMealMap.set(meal.name, meal.id);
-      });
-      
-      // Process each meal
-      for (const meal of log.meals) {
-        let mealId = existingMealMap.get(meal.name);
+      // Now handle foods for this meal
+      // Delete existing foods for this meal (simpler than updating)
+      const { error: deleteError } = await supabase
+        .from('foods')
+        .delete()
+        .eq('meal_id', mealId);
         
-        if (mealId) {
-          // Update existing meal
-          await supabase
-            .from('meals')
-            .update({
-              time: meal.time,
-              total_calories: meal.totalCalories,
-              total_protein: meal.totalMacros.protein,
-              total_carbs: meal.totalMacros.carbs,
-              total_fat: meal.totalMacros.fat
-            })
-            .eq('id', mealId);
-        } else {
-          // Insert new meal
-          const { data: newMeal, error } = await supabase
-            .from('meals')
-            .insert({
-              nutrition_log_id: logId,
-              name: meal.name,
-              time: meal.time,
-              total_calories: meal.totalCalories,
-              total_protein: meal.totalMacros.protein,
-              total_carbs: meal.totalMacros.carbs,
-              total_fat: meal.totalMacros.fat
-            })
-            .select('id')
-            .single();
-          
-          if (error) {
-            console.error('Error creating meal:', error);
-            continue;
-          }
-          
-          if (newMeal) {
-            mealId = newMeal.id;
-          } else {
-            console.error('No meal ID returned after insert');
-            continue;
-          }
-        }
-        
-        // Now handle foods for this meal
-        // Delete existing foods for this meal (simpler than updating)
-        await supabase
+      if (deleteError) {
+        console.error('Error deleting existing foods:', deleteError);
+        logOperation('delete foods', false, deleteError);
+      }
+      
+      // Insert all foods
+      for (const food of meal.foods) {
+        const { error: insertFoodError } = await supabase
           .from('foods')
-          .delete()
-          .eq('meal_id', mealId);
-        
-        // Insert all foods
-        for (const food of meal.foods) {
-          await supabase
-            .from('foods')
-            .insert({
-              meal_id: mealId,
-              name: food.name,
-              serving_size: food.servingSize,
-              calories: food.calories,
-              protein: food.macros.protein,
-              carbs: food.macros.carbs,
-              fat: food.macros.fat
-            });
+          .insert({
+            meal_id: mealId,
+            name: food.name,
+            serving_size: food.servingSize,
+            calories: food.calories,
+            protein: food.macros.protein,
+            carbs: food.macros.carbs,
+            fat: food.macros.fat
+          });
+          
+        if (insertFoodError) {
+          console.error('Error creating food:', insertFoodError);
+          logOperation('create food', false, insertFoodError);
+        } else {
+          logOperation('create food', true);
         }
       }
     }
+    
+    console.log("Nutrition log saved successfully to Supabase");
   } catch (error) {
     console.error('Error saving nutrition log to Supabase:', error);
+    logOperation('save nutrition log', false, error);
   }
 }
 
